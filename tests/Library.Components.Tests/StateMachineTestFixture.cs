@@ -1,125 +1,121 @@
-namespace Library.Components.Tests
+using System;
+using System.Threading.Tasks;
+using Automatonymous;
+using Library.Components.Tests.Internals;
+using MassTransit;
+using MassTransit.Context;
+using MassTransit.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using NUnit.Framework;
+using Quartz;
+
+namespace Library.Components.Tests;
+
+public class StateMachineTestFixture<TStateMachine, TInstance>
+    where TStateMachine : class, SagaStateMachine<TInstance>
+    where TInstance : class, SagaStateMachineInstance
 {
-    using System;
-    using System.Threading.Tasks;
-    using Automatonymous;
-    using Internals;
-    using MassTransit;
-    using MassTransit.Context;
-    using MassTransit.Testing;
-    using Microsoft.Extensions.DependencyInjection;
-    using Microsoft.Extensions.Logging;
-    using NUnit.Framework;
-    using Quartz;
+    Task<IScheduler> _scheduler;
+    TimeSpan _testOffset;
+    protected TStateMachine Machine;
+    protected ServiceProvider Provider;
+    protected ISagaStateMachineTestHarness<TStateMachine, TInstance> _harness;
+    protected IStateMachineSagaTestHarness<TInstance, TStateMachine> SagaHarness;
+    protected InMemoryTestHarness TestHarness;
 
-
-    public class StateMachineTestFixture<TStateMachine, TInstance>
-        where TStateMachine : class, SagaStateMachine<TInstance>
-        where TInstance : class, SagaStateMachineInstance
+    [OneTimeSetUp]
+    public async Task Setup()
     {
-        Task<IScheduler> _scheduler;
-        TimeSpan _testOffset;
-        protected TStateMachine Machine;
-        protected ServiceProvider Provider;
-        protected IStateMachineSagaTestHarness<TInstance, TStateMachine> SagaHarness;
-        protected InMemoryTestHarness TestHarness;
+        InterceptQuartzSystemTime();
 
-        [OneTimeSetUp]
-        public async Task Setup()
-        {
-            InterceptQuartzSystemTime();
-
-            var collection = new ServiceCollection()
-                .AddSingleton<ILoggerFactory>(provider => new TestOutputLoggerFactory(true))
-                .AddMassTransitInMemoryTestHarness(cfg =>
-                {
-                    cfg.AddSagaStateMachine<TStateMachine, TInstance>()
-                        .InMemoryRepository();
-
-                    cfg.AddPublishMessageScheduler();
-
-                    cfg.AddSagaStateMachineTestHarness<TStateMachine, TInstance>();
-                });
-
-            ConfigureServices(collection);
-
-            Provider = collection.BuildServiceProvider(true);
-
-            ConfigureLogging();
-
-            TestHarness = Provider.GetRequiredService<InMemoryTestHarness>();
-            TestHarness.OnConfigureInMemoryBus += configurator =>
+        var collection = new ServiceCollection()
+            .AddSingleton<ILoggerFactory>(provider => new TestOutputLoggerFactory(true))
+            .AddMassTransitInMemoryTestHarness(cfg =>
             {
-                configurator.UseInMemoryScheduler(out _scheduler);
-            };
+                cfg.AddSagaStateMachine<TStateMachine, TInstance>()
+                    .InMemoryRepository();
 
-            await TestHarness.Start();
+                cfg.AddPublishMessageScheduler();
 
-            SagaHarness = Provider.GetRequiredService<IStateMachineSagaTestHarness<TInstance, TStateMachine>>();
-            Machine = Provider.GetRequiredService<TStateMachine>();
-        }
+                cfg.AddMassTransitTestHarness();
+            });
 
-        protected virtual void ConfigureServices(IServiceCollection collection)
+        ConfigureServices(collection);
+
+        Provider = collection.BuildServiceProvider(true);
+
+        ConfigureLogging();
+
+        TestHarness = Provider.GetRequiredService<InMemoryTestHarness>();
+        TestHarness.OnConfigureInMemoryBus += configurator => { configurator.UseInMemoryScheduler(out _scheduler); };
+
+        await TestHarness.Start();
+
+        SagaHarness = Provider.GetRequiredService<IStateMachineSagaTestHarness<TInstance, TStateMachine>>();
+        Machine = Provider.GetRequiredService<TStateMachine>();
+    }
+
+    protected virtual void ConfigureServices(IServiceCollection collection)
+    {
+    }
+
+    [OneTimeTearDown]
+    public async Task Teardown()
+    {
+        try
         {
+            await TestHarness.Stop();
         }
-
-        [OneTimeTearDown]
-        public async Task Teardown()
+        finally
         {
-            try
-            {
-                await TestHarness.Stop();
-            }
-            finally
-            {
-                await Provider.DisposeAsync();
-            }
-
-            RestoreDefaultQuartzSystemTime();
+            await Provider.DisposeAsync();
         }
 
-        protected async Task AdvanceSystemTime(TimeSpan duration)
-        {
-            if (duration <= TimeSpan.Zero)
-                throw new ArgumentOutOfRangeException(nameof(duration));
+        RestoreDefaultQuartzSystemTime();
+    }
 
-            var scheduler = await _scheduler.ConfigureAwait(false);
+    protected async Task AdvanceSystemTime(TimeSpan duration)
+    {
+        if (duration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(duration));
 
-            await scheduler.Standby().ConfigureAwait(false);
+        var scheduler = await _scheduler.ConfigureAwait(false);
 
-            _testOffset += duration;
+        await scheduler.Standby().ConfigureAwait(false);
 
-            await scheduler.Start().ConfigureAwait(false);
-        }
+        _testOffset += duration;
 
-        void ConfigureLogging()
-        {
-            var loggerFactory = Provider.GetRequiredService<ILoggerFactory>();
+        await scheduler.Start().ConfigureAwait(false);
+    }
 
-            LogContext.ConfigureCurrentLogContext(loggerFactory);
-            Quartz.Logging.LogContext.SetCurrentLogProvider(loggerFactory);
-        }
+    void ConfigureLogging()
+    {
+        var loggerFactory = Provider.GetRequiredService<ILoggerFactory>();
 
-        void InterceptQuartzSystemTime()
-        {
-            SystemTime.UtcNow = GetUtcNow;
-            SystemTime.Now = GetNow;
-        }
+        LogContext.ConfigureCurrentLogContext(loggerFactory);
+        Quartz.Logging.LogContext.SetCurrentLogProvider(loggerFactory);
+    }
 
-        static void RestoreDefaultQuartzSystemTime()
-        {
-            SystemTime.UtcNow = () => DateTimeOffset.UtcNow;
-            SystemTime.Now = () => DateTimeOffset.Now;
-        }
+    void InterceptQuartzSystemTime()
+    {
+        SystemTime.UtcNow = GetUtcNow;
+        SystemTime.Now = GetNow;
+    }
 
-        DateTimeOffset GetUtcNow()
-        {
-            return DateTimeOffset.UtcNow + _testOffset;
-        }
+    static void RestoreDefaultQuartzSystemTime()
+    {
+        SystemTime.UtcNow = () => DateTimeOffset.UtcNow;
+        SystemTime.Now = () => DateTimeOffset.Now;
+    }
 
-        DateTimeOffset GetNow()
-        {
-            return DateTimeOffset.Now + _testOffset;
-        }
+    DateTimeOffset GetUtcNow()
+    {
+        return DateTimeOffset.UtcNow + _testOffset;
+    }
+
+    DateTimeOffset GetNow()
+    {
+        return DateTimeOffset.Now + _testOffset;
     }
 }
