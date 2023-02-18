@@ -16,12 +16,12 @@ public class StateMachineTestFixture<TStateMachine, TInstance>
     where TStateMachine : class, SagaStateMachine<TInstance>
     where TInstance : class, SagaStateMachineInstance
 {
-    Task<IScheduler> _scheduler;
+    ISchedulerFactory _scheduler;
     TimeSpan _testOffset;
     protected TStateMachine Machine;
     protected ServiceProvider Provider;
-    protected ISagaStateMachineTestHarness<TStateMachine, TInstance> _harness;
-    protected IStateMachineSagaTestHarness<TInstance, TStateMachine> SagaHarness;
+    protected ISagaStateMachineTestHarness<TStateMachine, TInstance> SagaHarness;
+    //protected IStateMachineSagaTestHarness<TInstance, TStateMachine> SagaHarness;
     protected InMemoryTestHarness TestHarness;
 
     [OneTimeSetUp]
@@ -38,6 +38,7 @@ public class StateMachineTestFixture<TStateMachine, TInstance>
 
                 cfg.AddPublishMessageScheduler();
 
+                cfg.AddSagaStateMachineContainerTestHarness<TStateMachine, TInstance>();
                 cfg.AddMassTransitTestHarness();
             });
 
@@ -52,7 +53,7 @@ public class StateMachineTestFixture<TStateMachine, TInstance>
 
         await TestHarness.Start();
 
-        SagaHarness = Provider.GetRequiredService<IStateMachineSagaTestHarness<TInstance, TStateMachine>>();
+        SagaHarness = Provider.GetRequiredService<ISagaStateMachineTestHarness<TStateMachine, TInstance>>();
         Machine = Provider.GetRequiredService<TStateMachine>();
     }
 
@@ -80,7 +81,7 @@ public class StateMachineTestFixture<TStateMachine, TInstance>
         if (duration <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(duration));
 
-        var scheduler = await _scheduler.ConfigureAwait(false);
+        var scheduler = await _scheduler.GetScheduler().ConfigureAwait(false);
 
         await scheduler.Standby().ConfigureAwait(false);
 
