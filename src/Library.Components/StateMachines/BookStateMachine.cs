@@ -19,6 +19,8 @@ public class BookStateMachine : MassTransitStateMachine<Book>
          *
          * If the book Id in the BookAdded Message does not yet exist in the SagaRepository, MassTransit will create a new
          * Book SagaInstance, inserting the book with it's correlation Id = book Id in the BookAdded message
+         *
+         * One form of correlation
          */
         Event(() => Added, x => x.CorrelateById(m => m.Message.BookId));
 
@@ -70,6 +72,11 @@ public class BookStateMachine : MassTransitStateMachine<Book>
 
 public static class BookStateMachineExtensions
 {
+    /// <summary>
+    /// Copies data out of the BookAdded message and stores it in the Book SagaRepository Instance
+    /// </summary>
+    /// <param name="binder"></param>
+    /// <returns></returns>
     public static EventActivityBinder<Book, BookAdded> CopyDataToInstance(
         this EventActivityBinder<Book, BookAdded> binder)
     {
