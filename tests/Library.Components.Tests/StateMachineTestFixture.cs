@@ -21,7 +21,6 @@ public class StateMachineTestFixture<TStateMachine, TInstance>
     protected TStateMachine Machine;
     protected ServiceProvider Provider;
     protected ISagaStateMachineTestHarness<TStateMachine, TInstance> SagaHarness;
-    //protected IStateMachineSagaTestHarness<TInstance, TStateMachine> SagaHarness;
     protected InMemoryTestHarness TestHarness;
 
     [OneTimeSetUp]

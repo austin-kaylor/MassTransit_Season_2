@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using Library.Components.StateMachines;
 using Library.Contracts;
 using MassTransit;
 
@@ -10,6 +8,7 @@ public class BookStateMachine : MassTransitStateMachine<Book>
 {
     public BookStateMachine()
     {
+        // Left video off at https://youtu.be/T-QUVy7qrRk
         /* 
          * Required for StateMachine to work
          * 
